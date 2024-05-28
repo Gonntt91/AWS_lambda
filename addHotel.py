@@ -7,11 +7,20 @@ import boto3
 import base64
 import logging
 import multipart as python_multipart
+# import requests
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+user_pool_id = 'ap-southeast-1_gERwZYEV4'
+
+bucket_name = os.environ.get('bucketName')
+region = os.environ.get('AWS_REGION')
+print("region:  ", region)
+print("bucket_name:  ", bucket_name)
+s3_client = boto3.client('s3', region_name=region)
+dynamodb = boto3.resource('dynamodb', region_name=region)
 
 def parse_multipart(stream, boundary):
     # Convert the boundary into bytes, as required by the parser
@@ -43,11 +52,19 @@ def parse_multipart(stream, boundary):
                 'content': part.file.read(),  # Read the content into memory
                 'content_type': part.headers.get('Content-Type', 'application/octet-stream')
             }
+
+            part.file.seek(0)
+
         else:
             # It's a regular field, decode the content as UTF-8
             fields[disposition_params['name']] = str(part.raw)
 
     return fields, files
+
+
+def base64_url_decode(input):
+    input += '=' * (4 - (len(input) % 4))  # Pad with '=' to make the length a multiple of 4
+    return base64.urlsafe_b64decode(input)
 
 
 def lambda_handler(event, context):
@@ -79,7 +96,9 @@ def lambda_handler(event, context):
     file = files.get('photo')
     file_name = file.get("filename")
     file_content = file.get("content")
-    file.get("content").seek(0)
+
+    print("hotel_name:  ", hotel_name)
+
 
     # We now have the field values and the file.
 
@@ -87,27 +106,28 @@ def lambda_handler(event, context):
     # Authorization must be done at API Gateway Level using a Custom Lambda Authorizer
     # In this code it is done in the microservice for educational purposes
 
-    token = jwt.decode(id_token, options={"verify_signature": False})
-    group = token.get('cognito:groups')
 
-    logger.info(group)
+    # token = jwt.decode(id_token, options={"verify_signature": False})
+    # group = token.get('cognito:groups')
+    #
+    # logger.info(group)
+    #
+    # if group is None or 'Admin' not in group:
+    #     return {
+    #         'statusCode': 401,
+    #         'headers': response_headers,
+    #         'body': json.dumps({
+    #             'Error': 'You are not a member of the Admin group'
+    #         })
+    #     }
 
-    if group is None or 'Admin' not in group:
-        return {
-            'statusCode': 401,
-            'headers': response_headers,
-            'body': json.dumps({
-                'Error': 'You are not a member of the Admin group'
-            })
-        }
 
-    bucket_name = os.environ.get('bucketName')
-    region = os.environ.get('AWS_REGION')
-    s3_client = boto3.client('s3', region_name=region)
-    dynamoDb = boto3.resource('dynamodb', region_name=region)
-    table = dynamoDb.Table('Hotels')
 
-    logger.info(bucket_name)
+
+    table = dynamodb.Table('hotels')
+
+
+
     try:
 
         # Upload the image to S3
@@ -130,19 +150,19 @@ def lambda_handler(event, context):
         # Store the hotel record in DynamoDb
         table.put_item(Item=hotel)
 
-        sns_topic_arn = os.getenv("hotelCreationTopicArn")
-        sns_client = boto3.client('sns')
-        sns_client.publish(
-            TopicArn=sns_topic_arn,
-            Message=json.dumps(hotel)
-        )
+        # sns_topic_arn = os.getenv("hotelCreationTopicArn")
+        # sns_client = boto3.client('sns')
+        # sns_client.publish(
+        #     TopicArn=sns_topic_arn,
+        #     Message=json.dumps(hotel)
+        # )
 
     except Exception as e:
         return {
             "statusCode": 500,
             'headers': response_headers,
             "body": json.dumps({
-                "Error": e.__traceback__
+                "Error": "COn cat"
             })
         }
 
@@ -182,3 +202,26 @@ def extract_boundary(headers):
         return boundary
 
     return None
+
+
+
+
+# def get_token_key(id_token, jwks_url):
+#     headers = jwt.get_unverified_header(id_token)
+#     kid = headers['kid']
+#     res = requests.get(jwks_url)
+#     jwks = res.json()
+#     key = next((item for item in jwks['keys'] if item["kid"] == kid), None)
+#     if key is None:
+#         raise ValueError("Key not found")
+#     return key
+#
+#
+# def verify_jwt(id_token, aws_region, user_pool_id):
+#     try:
+#         jwks_url = f'https://cognito-idp.{aws_region}.amazonaws.com/{user_pool_id}/.well-known/jwks.json'
+#         key = get_token_key(id_token, jwks_url)
+#         claims = jwt.decode(id_token, key, algorithms=['RS256'], audience='your-app-client-id')
+#         return claims
+#     except Exception as e:
+#         return {'JWT_error': str(e)}
