@@ -57,7 +57,7 @@ def parse_multipart(stream, boundary):
 
         else:
             # It's a regular field, decode the content as UTF-8
-            fields[disposition_params['name']] = str(part.raw)
+            fields[disposition_params['name']] = part.raw.decode('utf-8')
 
     return fields, files
 
@@ -121,12 +121,7 @@ def lambda_handler(event, context):
     #         })
     #     }
 
-
-
-
-    table = dynamodb.Table('hotels')
-
-
+    table = dynamodb.Table('hotel')
 
     try:
 
@@ -162,7 +157,7 @@ def lambda_handler(event, context):
             "statusCode": 500,
             'headers': response_headers,
             "body": json.dumps({
-                "Error": "COn cat"
+                "Error": repr(e)
             })
         }
 
